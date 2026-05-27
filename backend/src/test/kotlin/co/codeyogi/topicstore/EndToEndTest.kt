@@ -40,8 +40,8 @@ class EndToEndTest {
         clickhouse = GenericContainer(DockerImageName.parse("clickhouse/clickhouse-server:24.3"))
             .withExposedPorts(8123, 9000)
             .withEnv("CLICKHOUSE_DB", "default")
-            .withEnv("CLICKHOUSE_USER", "default")
-            .withEnv("CLICKHOUSE_PASSWORD", "")
+            .withEnv("CLICKHOUSE_USER", "ts")
+            .withEnv("CLICKHOUSE_PASSWORD", "ts")
             .waitingFor(Wait.forHttp("/ping").forPort(8123).forStatusCode(200))
         clickhouse.start()
 
@@ -51,8 +51,8 @@ class EndToEndTest {
             mapOf(
                 "kafka.bootstrap-servers" to kafka.bootstrapServers,
                 "clickhouse.url" to chJdbc,
-                "clickhouse.user" to "default",
-                "clickhouse.password" to "",
+                "clickhouse.user" to "ts",
+                "clickhouse.password" to "ts",
                 "ingest.refresh-interval-ms" to 500,
                 "kafka.batch-flush-ms" to 250,
                 "kafka.batch-size" to 50,
