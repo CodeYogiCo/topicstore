@@ -9,8 +9,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_BACKEND: ghcr.io/${{ github.repository_owner }}/topicstore-backend
-  IMAGE_UI: ghcr.io/${{ github.repository_owner }}/topicstore-ui
 
 jobs:
   unit-tests:
@@ -179,11 +177,14 @@ jobs:
       - name: Tag and push
         run: |
           SHA_SHORT=${GITHUB_SHA::7}
-          docker tag topicstore-backend:local ${IMAGE_BACKEND}:${SHA_SHORT}
-          docker tag topicstore-backend:local ${IMAGE_BACKEND}:latest
-          docker tag topicstore-ui:local      ${IMAGE_UI}:${SHA_SHORT}
-          docker tag topicstore-ui:local      ${IMAGE_UI}:latest
-          docker push ${IMAGE_BACKEND}:${SHA_SHORT}
-          docker push ${IMAGE_BACKEND}:latest
-          docker push ${IMAGE_UI}:${SHA_SHORT}
-          docker push ${IMAGE_UI}:latest
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          BE=ghcr.io/${OWNER}/topicstore-backend
+          UI=ghcr.io/${OWNER}/topicstore-ui
+          docker tag topicstore-backend:local "${BE}:${SHA_SHORT}"
+          docker tag topicstore-backend:local "${BE}:latest"
+          docker tag topicstore-ui:local      "${UI}:${SHA_SHORT}"
+          docker tag topicstore-ui:local      "${UI}:latest"
+          docker push "${BE}:${SHA_SHORT}"
+          docker push "${BE}:latest"
+          docker push "${UI}:${SHA_SHORT}"
+          docker push "${UI}:latest"
