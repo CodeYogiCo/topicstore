@@ -1,0 +1,23 @@
+micronaut:
+  application:
+    name: topicstore-backend
+  server:
+    port: 8080
+    cors:
+      enabled: true
+
+clickhouse:
+  url: ${CLICKHOUSE_URL:`jdbc:ch://clickhouse:8123/default`}
+  user: ${CLICKHOUSE_USER:default}
+  password: ${CLICKHOUSE_PASSWORD:}
+  database: ${CLICKHOUSE_DATABASE:default}
+
+kafka:
+  bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+  group-id: ${KAFKA_GROUP_ID:topicstore-consumer}
+  poll-timeout-ms: 500
+  batch-size: 500
+  batch-flush-ms: 1000
+
+ingest:
+  refresh-interval-ms: ${INGEST_REFRESH_MS:5000}

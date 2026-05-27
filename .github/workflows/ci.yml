@@ -1,0 +1,192 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BACKEND: ghcr.io/${{ github.repository_owner }}/topicstore-backend
+  IMAGE_UI: ghcr.io/${{ github.repository_owner }}/topicstore-ui
+
+jobs:
+  unit-tests:
+    name: Backend unit + Testcontainers E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Verify Docker
+        run: docker version && docker info | head -20
+
+      - name: Run backend tests (Testcontainers: Kafka + ClickHouse)
+        run: gradle -p backend --no-daemon test --info
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: backend/build/reports/tests/test
+          if-no-files-found: ignore
+
+  build-images:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      backend_tag: ${{ steps.meta.outputs.backend_tag }}
+      ui_tag: ${{ steps.meta.outputs.ui_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Image tags
+        id: meta
+        run: |
+          SHA_SHORT=${GITHUB_SHA::7}
+          echo "backend_tag=${SHA_SHORT}" >> $GITHUB_OUTPUT
+          echo "ui_tag=${SHA_SHORT}" >> $GITHUB_OUTPUT
+
+      - name: Build backend image (load locally)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          tags: topicstore-backend:local,topicstore-backend:${{ steps.meta.outputs.backend_tag }}
+          load: true
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build UI image (load locally)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ui/Dockerfile
+          tags: topicstore-ui:local,topicstore-ui:${{ steps.meta.outputs.ui_tag }}
+          load: true
+          cache-from: type=gha,scope=ui
+          cache-to: type=gha,mode=max,scope=ui
+
+      - name: Save images as tarball artifact
+        run: |
+          docker save topicstore-backend:local topicstore-ui:local | gzip > images.tgz
+          ls -lh images.tgz
+
+      - name: Upload images artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: images.tgz
+          retention-days: 1
+
+  e2e-compose:
+    name: E2E (compose: Kafka + ClickHouse + backend + UI)
+    needs: build-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download prebuilt images
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+
+      - name: Load images
+        run: docker load < images.tgz
+
+      - name: Start stack
+        run: |
+          docker compose up -d zookeeper kafka clickhouse
+          # wait for infra
+          for i in $(seq 1 60); do
+            if docker compose ps --format json zookeeper | grep -q '"Health":"healthy"' \
+               && docker compose ps --format json kafka | grep -q '"Health":"healthy"' \
+               && docker compose ps --format json clickhouse | grep -q '"Health":"healthy"'; then
+              echo "infra healthy"; break
+            fi
+            sleep 3
+          done
+          docker compose up -d backend ui
+
+      - name: Wait for backend health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/api/health >/dev/null; then
+              echo "backend up"; exit 0
+            fi
+            sleep 3
+          done
+          echo "backend never came up"; docker compose logs backend | tail -200; exit 1
+
+      - name: Run black-box E2E
+        run: ./e2e/run-e2e.sh
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "----- backend -----"; docker compose logs backend | tail -300
+          echo "----- kafka -----";   docker compose logs kafka   | tail -100
+          echo "----- clickhouse -----"; docker compose logs clickhouse | tail -100
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  push-images:
+    name: Push images to GHCR (main only)
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [unit-tests, e2e-compose, build-images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download prebuilt images
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+
+      - name: Load images
+        run: docker load < images.tgz
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag and push
+        run: |
+          SHA_SHORT=${GITHUB_SHA::7}
+          docker tag topicstore-backend:local ${IMAGE_BACKEND}:${SHA_SHORT}
+          docker tag topicstore-backend:local ${IMAGE_BACKEND}:latest
+          docker tag topicstore-ui:local      ${IMAGE_UI}:${SHA_SHORT}
+          docker tag topicstore-ui:local      ${IMAGE_UI}:latest
+          docker push ${IMAGE_BACKEND}:${SHA_SHORT}
+          docker push ${IMAGE_BACKEND}:latest
+          docker push ${IMAGE_UI}:${SHA_SHORT}
+          docker push ${IMAGE_UI}:latest
