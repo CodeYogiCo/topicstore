@@ -39,13 +39,13 @@ class EndToEndTest {
         clickhouse = ClickHouseContainer(DockerImageName.parse("clickhouse/clickhouse-server:24.3"))
         clickhouse.start()
 
-        val chJdbc = "jdbc:ch://${clickhouse.host}:${clickhouse.getMappedPort(8123)}/default"
+        val chJdbc = "jdbc:ch://${clickhouse.host}:${clickhouse.getMappedPort(8123)}/${clickhouse.databaseName}"
         server = ApplicationContext.run(
             EmbeddedServer::class.java,
             mapOf(
                 "kafka.bootstrap-servers" to kafka.bootstrapServers,
                 "clickhouse.url" to chJdbc,
-                "clickhouse.user" to "default",
+                "clickhouse.user" to clickhouse.username,
                 "clickhouse.password" to clickhouse.password,
                 "ingest.refresh-interval-ms" to 500,
                 "kafka.batch-flush-ms" to 250,
