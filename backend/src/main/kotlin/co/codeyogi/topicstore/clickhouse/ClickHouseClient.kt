@@ -156,9 +156,13 @@ class ClickHouseClient(private val props: ClickHouseProperties) {
         f.from?.takeIf { it.isNotBlank() }?.let { where += "ts >= parseDateTime64BestEffort(?)"; params += it }
         f.to?.takeIf { it.isNotBlank() }?.let { where += "ts <= parseDateTime64BestEffort(?)"; params += it }
         if (!f.jsonPath.isNullOrBlank() && !f.jsonValue.isNullOrBlank()) {
-            where += "JSONExtractString(payload, ?) = ?"
-            params += f.jsonPath
-            params += f.jsonValue
+            val parts = f.jsonPath.split('.').filter { it.isNotBlank() }
+            if (parts.isNotEmpty()) {
+                val placeholders = parts.joinToString(", ") { "?" }
+                where += "JSONExtractString(payload, $placeholders) = ?"
+                parts.forEach { params += it }
+                params += f.jsonValue
+            }
         }
         val whereSql = if (where.isEmpty()) "" else " WHERE " + where.joinToString(" AND ")
 
