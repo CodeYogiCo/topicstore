@@ -16,7 +16,7 @@ import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
-import org.testcontainers.clickhouse.ClickHouseContainer
+import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.KafkaContainer
 import org.testcontainers.containers.wait.strategy.Wait
 import org.testcontainers.junit.jupiter.Testcontainers
@@ -29,7 +29,7 @@ import java.util.Properties
 class EndToEndTest {
 
     private lateinit var kafka: KafkaContainer
-    private lateinit var clickhouse: ClickHouseContainer
+    private lateinit var clickhouse: GenericContainer<*>
     private lateinit var server: EmbeddedServer
     private lateinit var client: HttpClient
 
@@ -37,18 +37,22 @@ class EndToEndTest {
     fun setup() {
         kafka = KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
         kafka.start()
-        clickhouse = ClickHouseContainer(DockerImageName.parse("clickhouse/clickhouse-server:24.3"))
+        clickhouse = GenericContainer(DockerImageName.parse("clickhouse/clickhouse-server:24.3"))
+            .withExposedPorts(8123, 9000)
+            .withEnv("CLICKHOUSE_DB", "default")
+            .withEnv("CLICKHOUSE_USER", "default")
+            .withEnv("CLICKHOUSE_PASSWORD", "")
             .waitingFor(Wait.forHttp("/ping").forPort(8123).forStatusCode(200))
         clickhouse.start()
 
-        val chJdbc = "jdbc:ch://${clickhouse.host}:${clickhouse.getMappedPort(8123)}/${clickhouse.databaseName}"
+        val chJdbc = "jdbc:ch://${clickhouse.host}:${clickhouse.getMappedPort(8123)}/default"
         server = ApplicationContext.run(
             EmbeddedServer::class.java,
             mapOf(
                 "kafka.bootstrap-servers" to kafka.bootstrapServers,
                 "clickhouse.url" to chJdbc,
-                "clickhouse.user" to clickhouse.username,
-                "clickhouse.password" to clickhouse.password,
+                "clickhouse.user" to "default",
+                "clickhouse.password" to "",
                 "ingest.refresh-interval-ms" to 500,
                 "kafka.batch-flush-ms" to 250,
                 "kafka.batch-size" to 50,
