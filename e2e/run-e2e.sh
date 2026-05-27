@@ -62,7 +62,7 @@ blue "producing $MSG_COUNT messages to $TOPIC"
         echo "k${i}:{\"i\":${i},\"user\":{\"id\":\"u${bucket}\"},\"msg\":\"hello-${i}\"}"
     done
 } | docker exec -i "$KAFKA_CONTAINER" bash -c \
-    "kafka-console-producer.sh --bootstrap-server localhost:9092 --topic $TOPIC \
+    "kafka-console-producer --bootstrap-server localhost:9092 --topic $TOPIC \
         --property parse.key=true --property key.separator=:"
 
 blue "polling lookup until $MSG_COUNT rows appear"
