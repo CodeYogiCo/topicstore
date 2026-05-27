@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.testcontainers.clickhouse.ClickHouseContainer
 import org.testcontainers.containers.KafkaContainer
+import org.testcontainers.containers.wait.strategy.Wait
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.utility.DockerImageName
 import java.time.Duration
@@ -37,6 +38,7 @@ class EndToEndTest {
         kafka = KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))
         kafka.start()
         clickhouse = ClickHouseContainer(DockerImageName.parse("clickhouse/clickhouse-server:24.3"))
+            .waitingFor(Wait.forHttp("/ping").forPort(8123).forStatusCode(200))
         clickhouse.start()
 
         val chJdbc = "jdbc:ch://${clickhouse.host}:${clickhouse.getMappedPort(8123)}/${clickhouse.databaseName}"
